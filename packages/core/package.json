@@ -2,5 +2,13 @@
 	"name": "@heretek-ai/es-core",
 	"private": true,
 	"version": "0.0.0",
-	"type": "module"
+	"description": "Gated Build Factory state machine: Ed25519 human approvals, append-only frontier, RED-first test lock, mutation gate, sandboxed gate runner.",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"test": "bun test",
+		"check": "tsc --noEmit"
+	}
 }
