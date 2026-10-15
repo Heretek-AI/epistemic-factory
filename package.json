@@ -1,0 +1,20 @@
+{
+	"name": "epistemic-factory",
+	"private": true,
+	"version": "0.0.0",
+	"description": "Gated Build Factory: standalone Epistemic Quote & Cache Verifier MCP server plus single-worktree gated build state machine & CLI.",
+	"type": "module",
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"check": "bun test --pass-with-no-tests && tsc --noEmit && biome check .",
+		"test": "bun test --pass-with-no-tests",
+		"accept": "bash scripts/accept/wave-1.sh && bash scripts/accept/wave-2.sh && bash scripts/accept/wave-3.sh",
+		"lint": "biome check ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.0",
+		"typescript": "^5.9.2"
+	}
+}

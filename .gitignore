@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+*.tgz
+.DS_Store
+.worktrees-tmp/
+.factory/
+worktrees/

@@ -1,0 +1,19 @@
+{
+	"$schema": "https://heretek-ai.dev/schemas/gate-bundle-v1.json",
+	"name": "default",
+	"description": "Default Spec-Kit style declarative gate overlay for epistemic-factory.",
+	"gates": {
+		"mutationScore": 0.85,
+		"requireDualQaPass": true,
+		"requireEd25519Approvals": true,
+		"stagesRequiringApproval": ["GRILL", "SPEC"]
+	},
+	"tdd": {
+		"requireRedFailure": true,
+		"protectTestsInGreen": true
+	},
+	"evidence": {
+		"requireRedProofLog": true,
+		"requireDriftVerdictPass": true
+	}
+}

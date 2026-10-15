@@ -1,0 +1,21 @@
+# Tier-1 fast hooks for epistemic-factory (managed by j178/prek).
+# Only fast, local, fail-closed checks here. Slow gates live in `make check`.
+repos:
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v2.2.0
+    hooks:
+      - id: biome-check
+        name: biome format + lint (fail closed)
+        entry: npx --no-install @biomejs/biome check --write=false .
+        language: system
+        pass_filenames: false
+        always_run: true
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+        name: gitleaks secret scan (fail closed)
+        entry: gitleaks protect --staged --verbose --redact
+        language: system
+        pass_filenames: false
+        always_run: true

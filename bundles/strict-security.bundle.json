@@ -1,0 +1,24 @@
+{
+	"$schema": "https://heretek-ai.dev/schemas/gate-bundle-v1.json",
+	"name": "strict-security",
+	"description": "Strict-security Spec-Kit style declarative gate overlay: default gates plus seal-on-read, test-lock manifest, and QA model diversity.",
+	"gates": {
+		"mutationScore": 0.85,
+		"requireDualQaPass": true,
+		"requireEd25519Approvals": true,
+		"stagesRequiringApproval": ["GRILL", "SPEC"]
+	},
+	"tdd": {
+		"requireRedFailure": true,
+		"protectTestsInGreen": true
+	},
+	"security": {
+		"requireSealVerificationOnAllCacheReads": true,
+		"requireTestLockManifest": true,
+		"forbidIdenticalModelForProgrammerAndBothQaJudges": true
+	},
+	"evidence": {
+		"requireRedProofLog": true,
+		"requireDriftVerdictPass": true
+	}
+}

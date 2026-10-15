@@ -1,0 +1,6 @@
+{
+	"name": "@heretek-ai/es-cli",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module"
+}
