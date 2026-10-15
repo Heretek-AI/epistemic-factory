@@ -18,5 +18,6 @@
 		{ "path": "./packages/epistemic-verifier-mcp" },
 		{ "path": "./packages/core" },
 		{ "path": "./packages/cli" }
-	]
+	],
+	"files": []
 }

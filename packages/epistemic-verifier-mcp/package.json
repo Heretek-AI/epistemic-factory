@@ -2,5 +2,16 @@
 	"name": "@heretek-ai/epistemic-verifier-mcp",
 	"private": true,
 	"version": "0.0.0",
-	"type": "module"
+	"description": "Standalone Epistemic Quote & Cache Verifier MCP server (NFKC verbatim quotes, HMAC-sealed content-addressed cache, research auditor).",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"bin": {
+		"epistemic-verifier-mcp": "./src/mcp-server.ts"
+	},
+	"scripts": {
+		"test": "bun test",
+		"check": "tsc --noEmit"
+	}
 }
