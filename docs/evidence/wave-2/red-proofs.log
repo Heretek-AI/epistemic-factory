@@ -1,0 +1,87 @@
+# Wave 2 QA Red-Proof Log — `agency-qa`
+- **Branch:** `wave-2-factory-core`
+- **Worktree:** `/home/john/Projects/Heretek-AI-Rebuild/epistemic-factory/worktrees/wave-2`
+- **Date (UTC):** 2026-10-15
+- **Method:** runtime-only sabotage in `/tmp/opencode/qa-wave2/` (no in-tree
+  files touched; `git status --short` verified clean before and after).
+- **Spec:** `docs/prompts/SPEC.md` §2.2, `docs/prompts/verify-stage.md` §§1–2 (Wave 2).
+
+## 1. Mechanical acceptance (all exit 0)
+
+| Command | Exit | Output summary |
+|---|---|---|
+| `bun run check` (`bun test` + `tsc --noEmit` + `biome check .`) | 0 | 105 pass, 0 fail, 582 expects, 6 files; biome 29 files clean |
+| `bash scripts/accept/wave-2.sh` | 0 | 45 pass (core); typecheck; RED-first demo OK; tamper demo OK; `wave-2 accept PASSED` |
+| `bash scripts/accept/wave-1.sh` (regression) | 0 | 60 pass (verifier-mcp); round-trip OK; MCP smoke OK; `wave-1 accept PASSED` |
+
+## 2. Zero-stub grep (`packages/core/src` + `test` + accept script)
+
+- Pattern set: `TODO|FIXME|XXX|HACK|placeholder|not implemented|notImplemented|throw new Error("TODO")|catch (e) {}|\|\| true|set +e`
+- Command: `grep -rEn '<patterns>' packages/core/src packages/core/test scripts/accept/wave-2.sh`
+- Result: no matches (grep exit 1 = clean). **PASS**
+
+## 3. Scope check
+
+- `ls packages/` → `cli core epistemic-verifier-mcp` only (no `fleet`, no `web`).
+- `grep -rEn 'fleet|queereye|brainstorm|harvest' packages/core/src` → no matches. **PASS**
+- `git status --short -- packages/epistemic-verifier-mcp/` + `git diff --stat HEAD -- packages/epistemic-verifier-mcp/` → empty (Wave 1 code untouched, import-only). **PASS**
+
+## 4. Red-Proof Sabotage (all runtime-only via `bun /tmp/opencode/qa-wave2/*.ts`)
+
+### Sabotage A — RED bypass (`BUILD_TDD_RED -> BUILD_TDD_GREEN` with `exitCode === 0`)
+- Script: `/tmp/opencode/qa-wave2/sabA.ts` → `canTransition(..., { redExitCode: 0, redFailedTests: 0 })` and `transition(..., { redExitCode: 0 })`.
+- Observed: both threw `RedFirstViolationError` (`RED_FIRST_VIOLATION: tests
+  passed (exitCode 0) before implementation — refusing ...`). Exit 0.
+- Control: `{ redExitCode: 1, redFailedTests: 2 }` advances to `BUILD_TDD_GREEN`.
+- **Result: PASS** (fail-closed RED-first confirmed; no in-tree sabotage needed —
+  direct guard invocation is the stronger proof the throw is unconditional).
+
+### Sabotage B — test tampering (modify/delete after RED lock)
+- Script: `/tmp/opencode/qa-wave2/sabB.ts` → temp dir `/tmp/opencode/qa-wave2/testdir`
+  with `a.test.ts`/`b.test.ts`, `lockTestManifest`, then modify `a.test.ts`.
+- Observed: `verifyTestManifestUnchanged` → `{unchanged:false,changed:["a.test.ts"],...}`;
+  `assertTestManifestUnchanged` threw `TestTamperingError`; machine-level
+  `canTransition(BUILD_TDD_GREEN→GATE_MUTATION, {testManifest, testManifestCheck: diff, greenExitCode: 0})`
+  threw `TestTamperingError`. Deletion of `b.test.ts` likewise threw. Temp dir removed. Exit 0.
+- **Result: PASS**
+
+### Sabotage C — approval forgery (sign X, verify Y)
+- Script: `/tmp/opencode/qa-wave2/sabC.ts` → fresh key in `/tmp/opencode/qa-wave2/keys`,
+  `sealHumanKey`, `signStageApproval({runId:"run-1",stage:"GRILL",subjectHash:X,...})`.
+- Observed: `verifyStageApproval(keyDir, rec, "GRILL", X)` → `true` (control);
+  `verifyStageApproval(keyDir, rec, "GRILL", Y)` → `false`; wrong stage → `false`. Key dir removed. Exit 0.
+- **Result: PASS**
+
+### Sabotage D — mutation threshold (`mutationScore: 0.5`)
+- Script: `/tmp/opencode/qa-wave2/sabDE.ts` → `canTransition(GATE_MUTATION→QA_DUAL_EVAL, {mutationScore: 0.5})`.
+- Observed: `{next:"GATE_MUTATION",halted:true,reason:"... mutation score 0.5
+  below threshold 0.85 ..."}`; `transition(...)` threw `Error` with same reason.
+- Boundary controls: 0.84 refused, 0.85 permitted. Exit 0.
+- **Result: PASS**
+
+### Sabotage E — model diversity (identical programmer + both QA models, no override)
+- Script: `/tmp/opencode/qa-wave2/sabE.ts` → `canTransition(QA_DUAL_EVAL→DONE,
+  {PASS, PASS, programmerModel:"m1", qaFuncModel:"m1", qaAdvModel:"m1"})`.
+- Observed: threw `Error("model diversity violation: functional judge,
+  adversarial judge, and programmer all report \"m1\" ...")` — refusal via
+  fail-closed throw (stronger than a halted return). NOTE: an earlier unguarded
+  probe (`sabDE.ts`) surfaced this same throw as an uncaught error (exit 1 on
+  that probe script only); the guarded re-run confirms the refusal is the
+  expected behavior, not a crash — `transition()` callers receive the throw.
+- Controls: diverse models (`m1/m2/m3`) permitted to `DONE`; identical + 
+  `modelDiversityOverride: true` permitted. Exit 0.
+- **Result: PASS**
+
+## 5. Clean-handoff gate
+
+- `git status --short` after all probes: only `docs/evidence/wave-2/red-proofs.log`
+  (this file) added/staged. No `src/`, `test/`, or `scripts/` modifications.
+- In-tree sabotage: NONE performed (all sabotage runtime-only in `/tmp`); nothing to revert.
+- `/tmp` artefacts: scripts retained at `/tmp/opencode/qa-wave2/` for audit;
+  temp test/key dirs removed by the scripts themselves.
+
+## Verdict
+
+- Acceptance: 3/3 scripts exit 0. Zero-stub: clean. Scope: clean. Sabotage: 5/5 PASS.
+
+`QA_VERDICT: PASS`
