@@ -1,0 +1,100 @@
+# Wave 1 QA Red-Proof Log — `packages/epistemic-verifier-mcp`
+- Date (UTC): 2026-10-15
+- Branch: `wave-1-epistemic-verifier`
+- Worktree: `/home/john/Projects/Heretek-AI-Rebuild/epistemic-factory/worktrees/wave-1`
+- Agent: agency-qa (Muse Spark 1.3 Contributor)
+- Specs read in full from disk: `AGENTS.md`, `docs/prompts/SPEC.md`,
+  `docs/prompts/verify-stage.md`, `MASTER_BUILD_PROMPT.md`, `docs/reports/wave-1.md`
+
+## 1. Acceptance verification (no production source modified)
+
+### 1a. `bun run check` (covers `make check`: bun test + tsc --noEmit + biome)
+- Command: `bun run check`
+- Exit code: 0
+- Full output:
+```
+$ bun test --pass-with-no-tests && tsc --noEmit && biome check .
+bun test v1.4.2 (744846f84)
+
+  60 pass
+  0 fail
+ 434 expect() calls
+Ran 60 tests across 3 files. [72.00ms]
+Checked 19 files in 19ms. No fixes applied.
+```
+
+### 1b. `bash scripts/accept/wave-1.sh`
+- Command: `bash scripts/accept/wave-1.sh`
+- Exit code: 0
+- Full output:
+```
+--- wave-1: unit tests ---
+bun test v1.4.2 (744846f84)
+
+ 60 pass
+ 0 fail
+ 434 expect() calls
+Ran 60 tests across 3 files. [65.00ms]
+--- wave-1: typecheck ---
+--- wave-1: sealed put/get/audit round-trip ---
+round-trip OK
+--- wave-1: MCP stdio smoke test ---
+mcp smoke OK
+wave-1 accept PASSED
+```
+
+### 1c. Zero-stub grep (`packages/epistemic-verifier-mcp` src + test)
+- Command: `grep -r "TODO|FIXME|XXX|HACK|placeholder|not implemented|notImplemented|TODO()|dummy" packages/epistemic-verifier-mcp`
+- Result: No matches found (clean). Separate case-insensitive `mock` grep: no matches.
+
+### 1d. Scope check (FORBIDDEN: packages/fleet, packages/web, queereye, brainstorm, harvest)
+- `ls packages/`: `cli  core  epistemic-verifier-mcp` (core/cli are allowed Wave 2/3
+  scaffold: package.json + README.md + tsconfig.json only, no implementation).
+- `test -d packages/fleet`: NO_FLEET. `test -d packages/web`: NO_WEB.
+- `grep -ri "queereye|brainstorm|harvest" packages/epistemic-verifier-mcp/src packages/epistemic-verifier-mcp/test scripts/accept/wave-1.sh`: exit 1, no matches.
+- Result: SCOPE CLEAN — no forbidden content added.
+
+## 2. Red-Proof Sabotage (runtime-only, temp dirs under /tmp; production source NEVER touched)
+Runner: `bun /tmp/opencode/qa-wave1/redproof.ts` (imports package src directly,
+uses fresh mkdtemp cacheDir/stateDir per sabotage). Exit code: 0.
+Sabotage scripts live OUTSIDE the repo (/tmp/opencode/qa-wave1/); nothing to revert in-tree.
+
+### Sabotage A (seal tamper): overwrite cached `<sha>.md` WITHOUT updating HMAC seal
+- Procedure: `putCachedSource` a known source, then overwrote `<sha>.md` bytes
+  (`content + " PLANTED TAMPER BYTES"`), called `getCachedSource`.
+- Observed: threw `TamperedSourceError: cached source bytes no longer hash to
+  their address (modified after write): c3e64eb679e573d921ce3bc5...`
+- Result: SABOTAGE_A_SEAL_TAMPER: PASS (fail-closed read confirmed)
+
+### Sabotage B (quote mutation): alter 1 word in a known-good quote
+- Source: "The epistemic factory enforces verbatim quote verification for every research claim."
+- Good quote `enforces verbatim quote verification` -> `{ ok: true, index: 22 }`
+- Mutated quote `enforces altered quote verification` -> `{ ok: false,
+  reason: 'not found verbatim: "enforces altered quote verification"' }`
+- Result: SABOTAGE_B_QUOTE_MUTATION: PASS
+
+### Sabotage C (auditor prune): `[VERIFIED: sha256:<badhash> "quote"]` with missing source
+- Procedure: markdown with `[VERIFIED: sha256:0000...0000 "some sufficiently long
+  verbatim quote"]`, no such entry in cache; ran `auditResearchMarkdown`.
+- Observed: `passed=false`, `failures=1` ("source 0000000000000000... unusable:
+  cached source is missing: 0000..."), `prunedMarkdown` contains `## Pruned claims`.
+- Result: SABOTAGE_C_AUDITOR_PRUNE: PASS
+
+### Sabotage D (short fragment): quote shorter than MIN_QUOTE=12 rejected
+- Procedure: `verifyQuote(source, "short")` with `MIN_QUOTE=12`.
+- Observed: `{ ok: false, reason: "quote too short to be evidence (need at least 12 characters)" }`
+- Result: SABOTAGE_D_SHORT_FRAGMENT: PASS
+
+### Bonus (verify-stage §2 Wave-1 third item): unsealed cache entry refused
+- Procedure: planted `<sha>.md` + `<sha>.json` with NO valid `seal` (fresh empty
+  stateDir, no engine key); called `getCachedSource`.
+- Observed: `TamperedSourceError: no engine key in state dir; cannot authenticate: 0dc754a4...`
+- Runner: `bun /tmp/opencode/qa-wave1/unsealed.ts`, exit 0.
+- Result: UNSEALED_ENTRY_REFUSAL: PASS
+
+## 3. Clean-handoff check
+- `git status --short` before evidence commit: clean (no output).
+- Only file added by QA: `docs/evidence/wave-1/red-proofs.log` (this file).
+- Production source (`packages/`, `scripts/`, `test/`) untouched by QA.
+
+QA_VERDICT: PASS
