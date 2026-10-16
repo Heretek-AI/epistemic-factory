@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -48,6 +49,12 @@ function frontier(decisions: Array<{ id: string }> = [{ id: "d1" }]): Frontier {
 	};
 }
 
+const SPEC_CONTENT = "# Spec\n\nBuild the thing.\n";
+
+function sha256(text: string): string {
+	return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
 let greenDir: string;
 
 beforeEach(async () => {
@@ -65,12 +72,12 @@ async function fullContext(): Promise<TransitionContext> {
 	return {
 		frontier: frontier(),
 		frontierSignatureValid: true,
-		frontierHash: "a".repeat(64),
+		frontierHash: frontierHash(frontier()),
 		auditPassed: true,
 		verifiedCount: 2,
-		specContent: "# Spec\n\nBuild the thing.\n",
+		specContent: SPEC_CONTENT,
 		specSignatureValid: true,
-		specHash: "b".repeat(64),
+		specHash: sha256(SPEC_CONTENT),
 		redExitCode: 1,
 		redFailedTests: 3,
 		greenExitCode: 0,
@@ -222,6 +229,42 @@ describe("factory line", () => {
 				specSignatureValid: false,
 			}).halted,
 		).toBe(true);
+	});
+
+	it("refuses SPEC -> BUILD_TDD_RED when specHash does not match the spec content", async () => {
+		const ctx = await fullContext();
+		const forged = canTransition("SPEC", "BUILD_TDD_RED", {
+			...ctx,
+			specHash: "b".repeat(64),
+		});
+		expect(forged.halted).toBe(true);
+		expect(forged.next).toBe("SPEC");
+		expect(forged.reason).toMatch(/does not match sha256\(specContent\)/);
+		// The signature covered the original spec; a swapped spec is refused.
+		const swapped = canTransition("SPEC", "BUILD_TDD_RED", {
+			...ctx,
+			specContent: "# Spec\n\nBuild a different thing.\n",
+		});
+		expect(swapped.halted).toBe(true);
+		expect(swapped.reason).toMatch(/does not match/);
+		expect(canTransition("SPEC", "BUILD_TDD_RED", ctx).halted).toBe(false);
+	});
+
+	it("refuses GRILL -> RESEARCH when frontierHash does not match the frontier", async () => {
+		const ctx = await fullContext();
+		const forged = canTransition("GRILL", "RESEARCH", {
+			...ctx,
+			frontierHash: "a".repeat(64),
+		});
+		expect(forged.halted).toBe(true);
+		expect(forged.reason).toMatch(/does not match the supplied frontier/);
+		const edited: Frontier = { ...frontier(), deltaFromHead: "something else" };
+		const swapped = canTransition("GRILL", "RESEARCH", {
+			...ctx,
+			frontier: edited,
+		});
+		expect(swapped.halted).toBe(true);
+		expect(canTransition("GRILL", "RESEARCH", ctx).halted).toBe(false);
 	});
 
 	it("throws RedFirstViolationError when RED exits 0", async () => {

@@ -12,7 +12,15 @@
 // was weakened). `transition(from, to, ctx)` wraps it and throws an `Error`
 // carrying the halt reason whenever the machine does not reach `to`.
 //
-// Integration notes for the gate runner (Wave 3 CLI):
+// Hash binding: `frontierHash` must equal `frontierHash(ctx.frontier)` (the
+// canonical-JSON sha256 from `frontier.ts`) and `specHash` must equal
+// sha256(ctx.specContent); the guards recompute both and refuse on mismatch,
+// so a signature over one artefact can never advance a different one.
+//
+// `runner.ts` is the only production caller: it computes every piece of
+// evidence itself from disk and persisted run state.
+//
+// Integration notes for the gate runner:
 // - `BUILD_TDD_RED -> BUILD_TDD_GREEN`: after the failing run, the runner
 //   calls `lockTestManifest(testDir)` and carries the manifest forward in
 //   `ctx.testManifest`. The machine itself never touches the filesystem.
@@ -24,10 +32,12 @@
 // - `QA_DUAL_EVAL -> DONE`: model identities must be pairwise reported; set
 //   `modelDiversityOverride: true` only for an explicit, logged human waiver.
 
+import { createHash } from "node:crypto";
 import { MUTATION_THRESHOLD } from "../gates/mutation.ts";
 import type { ManifestDiff, TestManifest } from "../gates/test-lock.ts";
 import { TestTamperingError } from "../gates/test-lock.ts";
 import type { Frontier } from "./frontier.ts";
+import { frontierHash as computeFrontierHash } from "./frontier.ts";
 
 export { TestTamperingError };
 
@@ -168,6 +178,13 @@ function guardGrillToResearch(
 			"GRILL -> RESEARCH refused: missing or malformed frontierHash (sha256 of frontier.json is required to bind the human approval)",
 		);
 	}
+	const computedFrontierHash = computeFrontierHash(ctx.frontier);
+	if (computedFrontierHash !== ctx.frontierHash) {
+		return halted(
+			from,
+			`GRILL -> RESEARCH refused: frontierHash ${ctx.frontierHash} does not match the supplied frontier (computed sha256 ${computedFrontierHash}); the approval must bind the frontier actually being advanced`,
+		);
+	}
 	if (ctx.frontierSignatureValid !== true) {
 		return halted(
 			from,
@@ -210,6 +227,15 @@ function guardSpecToRed(
 		return halted(
 			from,
 			"SPEC -> BUILD_TDD_RED refused: missing or malformed specHash (sha256 of spec.md is required to bind the human approval)",
+		);
+	}
+	const computedSpecHash = createHash("sha256")
+		.update(ctx.specContent, "utf8")
+		.digest("hex");
+	if (computedSpecHash !== ctx.specHash) {
+		return halted(
+			from,
+			`SPEC -> BUILD_TDD_RED refused: specHash ${ctx.specHash} does not match sha256(specContent) ${computedSpecHash}; the approval must bind the spec actually being advanced`,
 		);
 	}
 	if (ctx.specSignatureValid !== true) {
