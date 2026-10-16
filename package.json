@@ -8,7 +8,8 @@
 		"packages/*"
 	],
 	"scripts": {
-		"check": "bun test --pass-with-no-tests && tsc --noEmit && biome check .",
+		"check": "bun test --pass-with-no-tests && bun run typecheck && biome check .",
+		"typecheck": "tsc --noEmit -p packages/epistemic-verifier-mcp && tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli",
 		"test": "bun test --pass-with-no-tests",
 		"build": "tsc -b packages/epistemic-verifier-mcp/tsconfig.build.json packages/core/tsconfig.build.json packages/cli/tsconfig.build.json && node scripts/fix-dist-bins.mjs packages/epistemic-verifier-mcp/dist/mcp-server.js packages/cli/dist/bin.js",
 		"accept": "bash scripts/accept/wave-1.sh && bash scripts/accept/wave-2.sh && bash scripts/accept/wave-3.sh",

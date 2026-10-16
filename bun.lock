@@ -15,11 +15,11 @@
       "name": "@heretek-ai/es-cli",
       "version": "3.0.0",
       "bin": {
-        "es": "./src/bin.ts",
+        "es": "./dist/bin.js",
       },
       "dependencies": {
-        "@heretek-ai/epistemic-verifier-mcp": "workspace:*",
-        "@heretek-ai/es-core": "workspace:*",
+        "@heretek-ai/epistemic-verifier-mcp": "^3.0.0",
+        "@heretek-ai/es-core": "^3.0.0",
       },
     },
     "packages/core": {
@@ -30,7 +30,7 @@
       "name": "@heretek-ai/epistemic-verifier-mcp",
       "version": "3.0.0",
       "bin": {
-        "epistemic-verifier-mcp": "./src/mcp-server.ts",
+        "epistemic-verifier-mcp": "./dist/mcp-server.js",
       },
     },
   },
@@ -66,5 +66,7 @@
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
+
+    "bun-types/undici-types": ["undici-types@8.12.2", "", {}, "sha512-VoMeD2O0KdHhcn+oPqOrpivN+7aDOklVSwOLD7JNjbzV1CboAFek9IFOXnreoufTUtAsCsOK0iETiERPNR/fDA=="],
   }
 }
