@@ -1,0 +1,184 @@
+# Wave 3 QA Red-Proof Log — `agency-qa`
+- **Wave:** 3 (`@heretek-ai/es-cli`: `es` CLI + `.worktreeinclude` sync)
+- **Branch:** `wave-3-es-cli`
+- **Worktree:** `/home/john/Projects/Heretek-AI-Rebuild/epistemic-factory/worktrees/wave-3`
+- **Date (UTC):** 2026-10-16
+- **Verifier model:** muse-spark-1.3-contributor
+- **Constraint honored:** no production/test source modified; only `docs/evidence/wave-3/` written. All sabotage was runtime-only under `/tmp/qa-*` (real entrypoint `bun ./packages/cli/src/bin.ts` + `bun -e` imports of worktree sources). Nothing sabotaged was committed.
+
+## 1. Acceptance verification (clean tree, no sabotage)
+
+### 1a. `bun run check` — EXIT 0 (PASS)
+Command: `bun run check` (= `bun test` + `tsc --noEmit` + `biome check .`)
+Observed tail:
+```
+123 pass
+0 fail
+639 expect() calls
+Ran 123 tests across 7 files. [1083.00ms]
+Checked 33 files in 29ms. No fixes applied.
+CHECK_EXIT=0
+```
+(The run also exercises the CLI smoke inline: `--help` usage printed, grounded
+audit `{"passed":true,...}`, ungrounded audit `{"passed":false,...}`,
+gate-mutation `{"score":1,...,"passed":true}` vs `{"score":0,...,"passed":false}`.)
+
+### 1b. `bash scripts/accept/wave-1.sh` — EXIT 0 (PASS, no regression)
+```
+--- wave-1: unit tests ---
+60 pass / 0 fail / 434 expect() calls (3 files)
+--- wave-1: typecheck ---
+--- wave-1: sealed put/get/audit round-trip ---
+round-trip OK
+--- wave-1: MCP stdio smoke test ---
+mcp smoke OK
+wave-1 accept PASSED
+WAVE1_EXIT=0
+```
+
+### 1c. `bash scripts/accept/wave-2.sh` — EXIT 0 (PASS, no regression)
+```
+--- wave-2: unit tests ---
+45 pass / 0 fail / 148 expect() calls (3 files)
+--- wave-2: RED-first demo (exitCode 0 must throw RedFirstViolationError) ---
+RED-first demo OK
+--- wave-2: tamper demo (modified test file must throw TestTamperingError) ---
+tamper demo OK
+wave-2 accept PASSED
+WAVE2_EXIT=0
+```
+
+### 1d. `bash scripts/accept/wave-3.sh` — EXIT 0 (PASS)
+```
+18 pass / 0 fail / 57 expect() calls (packages/cli, 1 file)
+typecheck (package + root): OK
+CLI smoke via real entrypoint:
+  es init            -> scaffolded .worktreeinclude, frontier.json, .factory/
+  key seal + approve -> GRILL-smoke-1 record on disk
+  audit-research     -> grounded exit 0; ungrounded exit 1
+  gate-mutation      -> `-- false` exit 0; `-- true` exit 1
+wave-3 accept PASSED
+WAVE3_EXIT=0
+```
+
+### 1e. Zero-stub grep over `packages/cli/src` + `packages/cli/test` — CLEAN (with one documented exception)
+- `FIXME|placeholder|not implemented|mock implementation`: **no matches**.
+- `TODO`: 2 matches, both inside the `es init` frontier-skeleton string literals
+  in `packages/cli/src/bin.ts:218,220`
+  (`"TODO: grilled idea — replace during the GRILL stage"`,
+  `"TODO: concrete behavioral delta from HEAD — ..."`).
+  These are generated-file default contents (the user must replace them in the
+  GRILL stage), not unimplemented code paths; every exported function is fully
+  implemented and covered by 18 tests. Recorded here, not treated as a stub
+  failure. No `throw new Error("TODO")`, no dummy `return true`, no swallowed
+  errors (`catch (e) {}` / `|| true` / `set +e`) found in wave-3 sources.
+- Judgment: PASS (with noted exception).
+
+### 1f. Scope check — PASS
+- `ls packages/` => `cli core epistemic-verifier-mcp` only. No `packages/fleet`,
+  no `packages/web`.
+- Case-insensitive grep for `fleet|queereye|brainstorm|harvest` over
+  `packages/cli` (src+test): **no matches**.
+- `git diff --name-only main...HEAD` touches only: `README.md`, `bun.lock`,
+  `docs/reports/wave-3.md`, `packages/cli/*`, `scripts/accept/wave-3.sh`.
+  `packages/epistemic-verifier-mcp/src` and `packages/core/src` unmodified
+  (Wave 1/2 imported, never reimplemented).
+
+### 1g. CLI smoke — PASS
+- `bun ./packages/cli/src/bin.ts --help` => exit **0**, usage printed.
+- `bun ./packages/cli/src/bin.ts frobnicate` => exit **1** (unknown command fails closed).
+
+## 2. Red-Proof Sabotage (runtime-only, /tmp; repo tree untouched)
+
+### Sabotage A — audit gate vs ungrounded VERIFIED claim: PASS (fails closed)
+Seed (real sealed cache, /tmp/qa-a):
+```
+$ bun -e '... putCachedSource(...) ...'
+seeded ee656fb6aa8364b8fb5be4f9b545f021a6f803322d08da10223eb88c46a0f14b
+SEED_EXIT=0
+```
+Attack markdown `/tmp/qa-a/bad.md`:
+```
+Bogus claim [VERIFIED: sha256:ee656fb6...0f14b "purple elephant parades loudly"] noted.
+```
+Result:
+```
+$ bun ./packages/cli/src/bin.ts audit-research --markdown /tmp/qa-a/bad.md \
+    --cache-dir /tmp/qa-a/cache --state-dir /tmp/qa-a/state
+AUDIT_EXIT=1
+{"passed":false,"verifiedCount":0,"failures":[{"line":1,"text":"Bogus claim [VERIFIED: ...] noted.","reason":"quote failed verification: not found verbatim: \"purple elephant parades loudly\""}]}
+```
+Pruning check (direct `auditResearchMarkdown` on the same input):
+```
+passed=false
+has-pruned-section=true   (## Pruned claims present)
+pruned-keeps-claim=true   (offending line relocated, not silently dropped)
+```
+=> exit 1 + `passed===false` + claim pruned. **SABOTAGE A: PASS** (gate caught it).
+
+### Sabotage B — mutation gate vs tests that cannot kill mutants: PASS (fails closed)
+Target `/tmp/qa-b/target.ts`: `export function eq(a,b){ return a === b; }` (1 mutant: `===`->`!==`).
+```
+$ bun .../bin.ts gate-mutation --dir /tmp/qa-b --files target.ts -- true
+GATE_TRUE_EXIT=1
+{"score":0,"killed":0,"survived":1,"passed":false}
+```
+A test command that always passes lets the mutant survive, and the gate exits 1.
+Control run documenting the kill semantics (SPEC §2.2: mutant killed iff testCmd
+exits non-zero):
+```
+$ bun .../bin.ts gate-mutation --dir /tmp/qa-b --files target.ts -- false
+GATE_FALSE_EXIT=0
+{"score":1,"killed":1,"survived":0,"passed":true}
+```
+NOTE (correction to the task brief): the brief asked for `["false"]` to yield
+exit 1, which is inverted — `false` always exits non-zero, so every mutant is
+killed and the gate passes by contract. The true fail-closed property is the
+`-- true` case above (weak tests => exit 1), which matches the wave-3 accept
+script. Target file verified intact after both runs (restore-in-`finally` holds).
+=> **SABOTAGE B: PASS** (gate caught weak tests; semantics match SPEC §2.2).
+
+### Sabotage C — `.worktreeinclude` traversal (`../evil`): PASS (contained)
+Setup: `/tmp/qa-c/base/{.env,.worktreeinclude}` with include content
+`../evil\n.env\n`; secret outside base at `/tmp/qa-c/evil` (`EVILPAYLOAD`).
+```
+$ bun -e '... syncWorktreeIncludes("/tmp/qa-c/base", "/tmp/qa-c/wt") ...'
+TRAV_EXIT=0
+copied=[".env"]
+missing=["../evil"]
+evil-intact=true
+$ find /tmp/qa-c/wt -type f
+/tmp/qa-c/wt/.env
+```
+The `../evil` pattern matched zero files (rejected at the `..`-segment match
+layer) and is reported in `missing`; only `.env` was copied; no file was
+created outside the worktree and `/tmp/qa-c/evil` is byte-identical.
+=> traversal skipped, nothing escaped baseDir. **SABOTAGE C: PASS**.
+
+### Sabotage D — `es init` twice without `--force`: PASS (refuses overwrite)
+```
+$ bun .../bin.ts init --dir /tmp/qa-d/proj
+INIT1_EXIT=0
+es init: scaffolded /tmp/qa-d/proj/.worktreeinclude, /tmp/qa-d/proj/frontier.json, /tmp/qa-d/proj/.factory/
+$ bun .../bin.ts init --dir /tmp/qa-d/proj
+INIT2_EXIT=1
+es: error: es init refused: /tmp/qa-d/proj/.worktreeinclude already exists (re-run with --force to overwrite)
+$ sha256sum -c /tmp/qa-d-hash1.txt
+/tmp/qa-d/proj/frontier.json: OK
+```
+Second run exits non-zero AND the pre-existing `frontier.json` is preserved
+byte-identically. => **SABOTAGE D: PASS**.
+
+## 3. Cleanliness
+- `git status --short` before writing this log: completely clean.
+- After writing: only `docs/evidence/wave-3/red-proofs.log` (this file) added.
+  No `src/`, `dispatcher/`, or `test/` modifications at any point; /tmp
+  sabotage dirs (`/tmp/qa-a`, `/tmp/qa-b`, `/tmp/qa-c`, `/tmp/qa-d`) live
+  outside the repo and were never committed.
+
+## Verdict
+- Acceptance: `bun run check` 0, wave-1/2/3 accept scripts all 0, stub grep
+  clean (one documented scaffold-default exception), scope clean, CLI smoke clean.
+- Red-proofs: A PASS, B PASS, C PASS, D PASS (4/4 fail-closed behaviors confirmed).
+
+QA_VERDICT: PASS
