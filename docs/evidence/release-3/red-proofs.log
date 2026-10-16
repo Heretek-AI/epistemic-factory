@@ -1,0 +1,92 @@
+# Release 3.0.0 — QA Red-Proof Evidence Log (`docs/evidence/release-3/red-proofs.log`)
+Branch: `release-3.0.0` | Worktree: `worktrees/release-3` | Date: 2026-10-16 UTC
+QA Verifier: agency-qa (Muse Spark 1.3 Contributor). No production source modified;
+only this evidence file created under `docs/evidence/release-3/`.
+
+## 1. `bun run check` — EXIT 0
+- `bun test`: 123 pass / 0 fail / 639 expect() calls across 7 files.
+- `tsc --noEmit`: clean. `biome check .`: 38 files clean, no fixes.
+- EXIT_CODE=0
+
+## 2. Accept chain — ALL EXIT 0
+- `bash scripts/accept/wave-1.sh` → wave-1 accept PASSED (WAVE1_EXIT=0)
+  (60 pass / 434 expects; typecheck; sealed put/get/audit round-trip OK; MCP stdio smoke OK)
+- `bash scripts/accept/wave-2.sh` → wave-2 accept PASSED (WAVE2_EXIT=0)
+  (45 pass / 148 expects; RED-first demo OK; tamper demo OK)
+- `bash scripts/accept/wave-3.sh` → wave-3 accept PASSED (WAVE3_EXIT=0)
+  (18 pass / 57 expects; CLI init/key/approve/audit/gate smokes OK)
+
+## 3. `bun run build` from clean — EXIT 0, dist emitted for all three
+- Pre-step: `rm -rf packages/*/dist` (allowed: build artifacts only).
+- NOTE: first rebuild exited 1 because stale gitignored `*.tsbuildinfo`
+  made `tsc -b` report "up to date" and skip emission, so `fix-dist-bins`
+  refused the missing bin (fail-closed, as designed). Removed the untracked
+  gitignored `packages/*/tsconfig*.tsbuildinfo` and re-ran: BUILD_EXIT=0.
+  `git status --short` confirms no tracked source change from this.
+- dist contents: verifier 6 js + 6 d.ts; core 7 js (approval/ed25519,
+  factory/frontier, factory/machine, gates/engine, gates/mutation,
+  gates/test-lock, index) + d.ts; cli 3 js (bin, index, worktree-include)
+  + d.ts. Total 16 `.js` + 16 `.d.ts`.
+- Zero `.ts` import specifiers remaining in emitted JS (grep: 0 hits).
+- Both bins `#!/usr/bin/env node` + `-rwxr-xr-x` (fix-dist-bins ok × 2).
+
+## 4. Publish-readiness assertions — ALL HOLD
+a. package.json per package:
+   - versions: 3.0.0 / 3.0.0 / 3.0.0 (verifier, core, cli). PASS
+   - `private` field: absent in all three. PASS
+   - license: Apache-2.0 × 3. PASS
+   - `publishConfig.access`: public × 3. PASS
+   - `grep -r "workspace:" packages/*/package.json` → empty (exit 1). PASS
+   - cli sibling deps: `"@heretek-ai/epistemic-verifier-mcp": "^3.0.0"`,
+     `"@heretek-ai/es-core": "^3.0.0"` (registry ranges). PASS
+b. `npm pack --dry-run` per package (npm 11.x):
+   - verifier: 15 files, 18.9 kB — dist/ + README.md + LICENSE + package.json only.
+   - core: 17 files, 21.1 kB — dist/ + README.md + LICENSE + package.json only.
+   - cli: 9 files, 14.9 kB — dist/ + README.md + LICENSE + package.json only.
+   - No `src/`, no `test/`, no `.env` in any list. PASS
+c. Plain-`node` smoke (node v26.10.0, never bun):
+   - `import dist/index.js` × 3 → all clean (verifier 26 exports incl.
+     verifyQuote/auditResearchMarkdown/putCachedSource/runMcpServer;
+     core 23 exports incl. transition/signStageApproval/runMutationGate;
+     cli 20 exports incl. main/cmdApprove/cmdGateMutation). PASS
+   - `node packages/cli/dist/bin.js --help` → exit 0. PASS
+   - `node packages/cli/dist/bin.js frobnicate` → exit 1. PASS
+d. Registry availability (`npm view <name>@3.0.0 version` → 404 expected):
+   - `@heretek-ai/epistemic-verifier-mcp@3.0.0` → 404 Not Found. PASS (free)
+   - `@heretek-ai/es-core@3.0.0` → 404 No match for version 3.0.0. PASS (free)
+   - `@heretek-ai/es-cli@3.0.0` → 404 No match for version 3.0.0. PASS (free)
+
+## 5. Scope / diff review — PASS (packaging-only)
+- `git diff main --stat`: 18 files — LICENSE × 4 (new), biome.json (new),
+  bun.lock (version/bin-path refresh), docs/reports/release-3.0.0.md (new),
+  root package.json (+build script only), per-package package.json (publish
+  metadata), per-package tsconfig.build.json (new), scripts/fix-dist-bins.mjs
+  (new), cli/src/bin.ts, cli/src/index.ts, verifier/src/mcp-server.ts.
+- `git diff main -- <src files>`: ONLY shebang `bun`→`node`, added
+  `#!/usr/bin/env node` (mcp-server), dual-runtime `isMain()` guards,
+  `SERVER_VERSION` 0.0.0→3.0.0, and a guard comment in cli index.ts.
+  NO logic/gate/auditor/quote/seal/cache/frontier/machine changes. PASS
+- `packages/` contains ONLY cli, core, epistemic-verifier-mcp — no
+  fleet/web/queereye/brainstorm/harvest. PASS
+- `scripts/accept/*` unmodified (diff shows only new fix-dist-bins.mjs). PASS
+
+## 6. Red-proof sabotage (temp dirs under /tmp only, plain `node`, BUILT dist)
+- Sabotage A (ungrounded VERIFIED claim vs built dist auditor):
+  Input: `[VERIFIED: sha256:<64 zeros> "the quick brown fox jumps over the lazy dog"]`.
+  Result: `passed:false, verifiedCount:0, failures:[{line:3,…missing…}]`,
+  `prunedMarkdown` contains `## Pruned claims`. → RED-PROOF PASS
+  (auditor prunes ungrounded claims; SABA_EXIT=0; /tmp/qa-sab-a removed).
+- Sabotage B (1-word-mutated quote vs built dist quote module):
+  Source: "The epistemic factory enforces deterministic verbatim quote
+  verification for every research claim."
+  Genuine "deterministic verbatim quote verification" → `{ok:true,index:31}`.
+  Mutant "deterministic verbatim quote fabrication" →
+  `{ok:false,reason:'not found verbatim…'}`. → RED-PROOF PASS (SABB_EXIT=0).
+- Control holds: genuine quote verifies, mutant rejected — the check is not vacuous.
+
+## 7. Clean handoff
+- `git status --short` before writing this file: clean.
+- After writing: only `docs/evidence/release-3/red-proofs.log` added (staged).
+- No publish, no push, no merge performed.
+
+QA_VERDICT: PASS
