@@ -6,7 +6,7 @@
 		"moduleResolution": "bundler",
 		"strict": true,
 		"skipLibCheck": true,
-		"composite": true,
+		"composite": false,
 		"declaration": true,
 		"sourceMap": true,
 		"resolveJsonModule": true,
@@ -15,7 +15,13 @@
 		"noUncheckedIndexedAccess": true,
 		"exactOptionalPropertyTypes": true,
 		"allowImportingTsExtensions": true,
-		"types": ["bun-types", "node"]
+		"types": ["bun-types", "node"],
+		"paths": {
+			"@heretek-ai/es-core": ["../core/src/index.ts"],
+			"@heretek-ai/epistemic-verifier-mcp": [
+				"../epistemic-verifier-mcp/src/index.ts"
+			]
+		}
 	},
 	"include": ["src", "test"]
 }

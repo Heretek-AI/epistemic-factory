@@ -6,11 +6,13 @@ export type { ParsedArgs } from "./bin.ts";
 export {
 	APPROVABLE_STAGES,
 	APPROVALS_DIR,
+	cmdAdvance,
 	cmdApprove,
 	cmdAuditResearch,
 	cmdGateMutation,
 	cmdInit,
 	cmdKeySeal,
+	cmdRun,
 	cmdStatus,
 	DEFAULT_WORKTREE_INCLUDE,
 	FACTORY_DIR,

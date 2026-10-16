@@ -4,8 +4,10 @@
 	"compilerOptions": {
 		"outDir": "dist",
 		"rootDir": "src",
+		"composite": true,
 		"sourceMap": false,
-		"rewriteRelativeImportExtensions": true
+		"rewriteRelativeImportExtensions": true,
+		"paths": {}
 	},
 	"include": ["src"],
 	"references": [

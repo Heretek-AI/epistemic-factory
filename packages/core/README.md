@@ -1,5 +1,9 @@
 # `@heretek-ai/es-core`
 
+> **3.0.0 is a ground-up rewrite** with a breaking API. Versions up to 2.5.0
+> of this package came from an older, unrelated codebase and are not
+> compatible; pin `^2` if you depend on them.
+
 Gated Build Factory state machine (Wave 2): Ed25519 human approvals, the
 append-only design-decision frontier, the deterministic `GRILL -> RESEARCH ->
 SPEC -> BUILD_TDD_RED -> BUILD_TDD_GREEN -> GATE_MUTATION -> QA_DUAL_EVAL ->
@@ -18,6 +22,10 @@ hashing and secret scanning.
 - `src/factory/machine.ts` — `canTransition` (pure), `transition`
   (throwing), `RedFirstViolationError`, `assertModelDiversity`
   (`TestTamperingError` re-exported from `gates/test-lock.ts`).
+- `src/factory/runner.ts` — `advance`, `runToCompletion`,
+  `expectedApprovalSubject`, `loadFactoryConfig`, `readRunState`: the
+  production driver of the machine. Persists `.factory/run.json` and
+  computes all transition evidence from disk (see the root README).
 - `src/gates/test-lock.ts` — `lockTestManifest`,
   `verifyTestManifestUnchanged`, `assertTestManifestUnchanged`.
 - `src/gates/mutation.ts` — `generateSourceMutants`,
@@ -28,6 +36,11 @@ hashing and secret scanning.
 
 ## Runner contract (how the CLI drives the machine)
 
+`src/factory/runner.ts` implements this contract; the CLI's `es advance` /
+`es run` call it and never pass evidence through. The machine also
+recomputes `frontierHash(frontier)` and `sha256(specContent)` and refuses
+when the supplied hashes do not match.
+
 1. After the RED run fails, call `lockTestManifest(testDir)` and carry the
    manifest in `ctx.testManifest`.
 2. Before leaving GREEN, call `verifyTestManifestUnchanged(testDir,
@@ -37,3 +50,7 @@ hashing and secret scanning.
 3. Gate commands passed to `runGateCommand` should be trust-checked via
    `assertTrustedCommand` (or `trustedHashes`), and their output screened
    with `scanForSecrets` — the scanner reports, the caller decides.
+4. `runGateCommand({ useBwrap: true })` fails closed with
+   `SandboxUnavailableError` when `bwrap` is missing; only an explicit
+   `allowUnsandboxed: true` downgrades to direct execution (recorded as a
+   warning in `stderr`).

@@ -17,6 +17,12 @@
 //   --run-id <id> [--key-dir <dir>] [--passphrase <pw>] [--dir <dir>]`
 // - `es audit-research --markdown <file> --cache-dir <dir> --state-dir <dir>`
 // - `es gate-mutation --dir <dir> --files <a,b> -- <testCmd...>`
+// - `es advance [--to <STATE>] [--dir <dir>]`
+// - `es run [--dir <dir>]`
+//
+// `advance` and `run` drive the persisted run (`.factory/run.json`) through
+// core's runner, which computes every piece of gate evidence itself. They
+// accept no evidence flags: any flag other than `--to`/`--dir` is refused.
 //
 // The human passphrase never touches disk: it arrives via `--passphrase` or
 // the `ES_PASSPHRASE` environment variable and lives only in memory.
@@ -27,9 +33,21 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { auditResearchMarkdown } from "@heretek-ai/epistemic-verifier-mcp";
-import type { Frontier, StageName } from "@heretek-ai/es-core";
+import type {
+	AdvanceOutcome,
+	FactoryState,
+	Frontier,
+	RunnerOptions,
+	StageName,
+} from "@heretek-ai/es-core";
 import {
+	advance,
+	expectedApprovalSubject,
+	FACTORY_LINE,
+	loadOrCreateRun,
+	readRunState,
 	runMutationGate,
+	runToCompletion,
 	saveFrontier,
 	sealHumanKey,
 	signStageApproval,
@@ -47,11 +65,21 @@ Commands:
       Scaffold .worktreeinclude, .factory/, and frontier.json skeleton.
       Refuses to overwrite without --force.
   status [--dir <dir>]
-      Print frontier presence + rounds count, approvals present, STOP
-      presence. Informational (exit 0).
-  approve --stage <GRILL|SPEC|WAIVER|TRUST> --subject <sha256> --run-id <id> [--key-dir <dir>] [--passphrase <pw>] [--dir <dir>] [--timestamp <iso>]
+      Print run state (run id, current state, last step), frontier presence
+      + rounds count, approvals present, STOP presence. Informational
+      (exit 0).
+  approve --stage <GRILL|SPEC|WAIVER|TRUST> [--subject <sha256>] [--run-id <id>] [--key-dir <dir>] [--passphrase <pw>] [--dir <dir>] [--timestamp <iso>]
       Sign a stage approval with the sealed human key and store the record
-      under <dir>/.factory/approvals/.
+      under <dir>/.factory/approvals/. Without --subject, GRILL/SPEC/TRUST
+      sign the hash of the frontier / spec / .factory/config.json on disk;
+      without --run-id, the current run in .factory/run.json is used.
+  advance [--to <STATE>] [--dir <dir>]
+      Advance the persisted run one step (default: the next state on the
+      line). Every gate's evidence is computed from disk; evidence flags
+      are refused. Exit 0 when advanced, 1 with the reason when refused.
+  run [--dir <dir>]
+      Advance as far as the gates allow; stop at DONE (exit 0) or at the
+      first refusal (exit 1, with the reason).
   audit-research --markdown <file> --cache-dir <dir> --state-dir <dir>
       Audit research markdown against the sealed source cache.
       Exit 0 when grounded, 1 when pruned/failed.
@@ -329,13 +357,30 @@ export async function cmdStatus(tail: readonly string[]): Promise<number> {
 		approvals = [];
 	}
 	const stopPresent = await exists(path.join(dir, FACTORY_DIR, STOP_FILE));
+	let runLines: string[];
+	try {
+		const run = await readRunState(dir);
+		if (run === undefined) {
+			runLines = ["run: none (es advance starts one)"];
+		} else {
+			const last = run.history[run.history.length - 1];
+			runLines = [
+				`run: ${run.runId} state=${run.state}`,
+				...(last !== undefined
+					? [`last: ${last.outcome} ${last.from} -> ${last.to}: ${last.reason}`]
+					: []),
+			];
+		}
+	} catch (error) {
+		runLines = [`run: INVALID: ${(error as Error)?.message ?? String(error)}`];
+	}
 	const frontierLine = !frontier.found
 		? "frontier: absent"
 		: frontier.invalid !== undefined
 			? `frontier: present (${frontier.file}) INVALID: ${frontier.invalid}`
 			: `frontier: present (${frontier.file}) rounds=${String(frontier.rounds)} decisions=${String(frontier.decisions)} delta=${frontier.delta}`;
 	process.stdout.write(
-		`${[`dir: ${dir}`, frontierLine, `approvals: ${approvals.length}${approvals.length > 0 ? ` (${approvals.join(", ")})` : ""}`, `stop: ${stopPresent ? "present (.factory/STOP forces HALTED)" : "absent"}`].join("\n")}\n`,
+		`${[`dir: ${dir}`, ...runLines, frontierLine, `approvals: ${approvals.length}${approvals.length > 0 ? ` (${approvals.join(", ")})` : ""}`, `stop: ${stopPresent ? "present (.factory/STOP forces HALTED)" : "absent"}`].join("\n")}\n`,
 	);
 	return 0;
 }
@@ -361,14 +406,21 @@ export async function cmdApprove(tail: readonly string[]): Promise<number> {
 			`es approve requires --stage <${APPROVABLE_STAGES.join("|")}> (got: ${stage ?? "missing"})`,
 		);
 	}
-	const subject = flagValue(flags, "subject");
+	const dir = path.resolve(flagValue(flags, "dir") ?? process.cwd());
+	let subject = flagValue(flags, "subject");
+	if (subject === undefined && stage !== "WAIVER") {
+		subject = await expectedApprovalSubject(dir, stage as StageName);
+	}
 	if (subject === undefined || !/^[0-9a-fA-F]{64}$/.test(subject)) {
 		throw new Error(
 			"es approve requires --subject <64-hex sha256 of the gated artefact> (frontier.json or spec.md)",
 		);
 	}
-	const runId = flagValue(flags, "run-id");
-	if (runId === undefined || runId.length === 0) {
+	let runId = flagValue(flags, "run-id");
+	if (runId === undefined) {
+		runId = (await loadOrCreateRun(dir)).runId;
+	}
+	if (runId.length === 0) {
 		throw new Error("es approve requires --run-id <id>");
 	}
 	const keyDir = flagValue(flags, "key-dir") ?? defaultKeyDir();
@@ -378,7 +430,6 @@ export async function cmdApprove(tail: readonly string[]): Promise<number> {
 			"es approve requires --passphrase <pw> or ES_PASSPHRASE (agents may request approvals, never grant or self-sign them)",
 		);
 	}
-	const dir = path.resolve(flagValue(flags, "dir") ?? process.cwd());
 	const timestamp = flagValue(flags, "timestamp") ?? new Date().toISOString();
 	const record = await signStageApproval(keyDir, passphrase, {
 		runId,
@@ -481,6 +532,78 @@ export async function cmdGateMutation(
 	return result.passed ? 0 : 1;
 }
 
+/** Flags `es advance` / `es run` accept. Everything else is refused. */
+const RUNNER_FLAGS: Readonly<Record<string, readonly string[]>> = {
+	advance: ["dir", "to"],
+	run: ["dir"],
+};
+
+function runnerOptions(): RunnerOptions {
+	return {
+		auditResearch: async (markdown, cacheDir, stateDir) =>
+			await auditResearchMarkdown(markdown, cacheDir, stateDir),
+	};
+}
+
+function parseRunnerTail(
+	command: "advance" | "run",
+	tail: readonly string[],
+): { dir: string; to?: FactoryState } {
+	const { flags, positional, rest } = parseArgs(tail);
+	if (positional.length > 0 || rest.length > 0) {
+		throw new Error(
+			`es ${command} takes no positional arguments (got: ${[...positional, ...rest].join(" ")})`,
+		);
+	}
+	const allowed = RUNNER_FLAGS[command] ?? [];
+	const unknown = Object.keys(flags).filter((name) => !allowed.includes(name));
+	if (unknown.length > 0) {
+		throw new Error(
+			`es ${command} refused flag(s) ${unknown.map((name) => `--${name}`).join(", ")}: gate evidence is computed by the runner from disk and is never accepted from the caller`,
+		);
+	}
+	const dir = path.resolve(flagValue(flags, "dir") ?? process.cwd());
+	const toRaw = flags.to;
+	if (toRaw === undefined) return { dir };
+	const valid: readonly string[] = [...FACTORY_LINE, "HALTED"];
+	if (typeof toRaw !== "string" || !valid.includes(toRaw)) {
+		throw new Error(
+			`es advance --to requires one of ${valid.join(", ")} (got: ${String(toRaw)})`,
+		);
+	}
+	return { dir, to: toRaw as FactoryState };
+}
+
+function printOutcome(outcome: AdvanceOutcome): void {
+	const line = outcome.ok
+		? `${outcome.from} -> ${outcome.state}: ${outcome.reason}`
+		: `REFUSED ${outcome.from} -> ${outcome.to} (state: ${outcome.state}): ${outcome.reason}`;
+	process.stdout.write(`${line}\n`);
+}
+
+/**
+ * `es advance [--to <STATE>] [--dir <dir>]`: one runner step. Exit 0 when
+ * the run reached the target, 1 (with the reason) when refused or halted.
+ */
+export async function cmdAdvance(tail: readonly string[]): Promise<number> {
+	const { dir, to } = parseRunnerTail("advance", tail);
+	const outcome = await advance(dir, to, runnerOptions());
+	printOutcome(outcome);
+	return outcome.ok ? 0 : 1;
+}
+
+/**
+ * `es run [--dir <dir>]`: advance as far as the gates allow. Exit 0 at
+ * DONE; exit 1 at the first refusal (or HALTED), printing the reason.
+ */
+export async function cmdRun(tail: readonly string[]): Promise<number> {
+	const { dir } = parseRunnerTail("run", tail);
+	const result = await runToCompletion(dir, runnerOptions());
+	for (const step of result.steps) printOutcome(step);
+	process.stdout.write(`state: ${result.state}\n`);
+	return result.ok ? 0 : 1;
+}
+
 /**
  * Dispatch `argv` (already minus the program name, i.e.
  * `process.argv.slice(2)`). Prints usage to stdout and returns 0 for
@@ -519,6 +642,10 @@ export async function main(argv: readonly string[]): Promise<number> {
 				return await cmdAuditResearch(tail);
 			case "gate-mutation":
 				return await cmdGateMutation(tail);
+			case "advance":
+				return await cmdAdvance(tail);
+			case "run":
+				return await cmdRun(tail);
 			default:
 				throw new Error(`unknown command "${command}"`);
 		}

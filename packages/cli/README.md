@@ -1,5 +1,9 @@
 # `@heretek-ai/es-cli`
 
+> **3.0.0 is a ground-up rewrite** with a breaking API. Versions up to 2.5.0
+> of this package came from an older, unrelated codebase and are not
+> compatible; pin `^2` if you depend on them.
+
 The Gated Build Factory CLI (`es`): human key sealing, project scaffolding,
 status, signed stage approvals, research audit, mutation gate, and the
 `.worktreeinclude` secret syncer.
@@ -16,6 +20,8 @@ status, signed stage approvals, research audit, mutation gate, and the
 - `src/index.ts` — re-exports the command functions and the syncer (importing
   it never runs the CLI).
 - `test/cli.test.ts` — `bun:test` suite (real temp dirs, real core/verifier).
+- `test/runner.test.ts` — `es advance` / `es run` end to end against a real
+  temp project (real key, approvals, sealed cache, and test command).
 
 ## Commands
 
