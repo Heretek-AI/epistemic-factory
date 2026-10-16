@@ -13,7 +13,9 @@
 		"isolatedModules": true,
 		"verbatimModuleSyntax": true,
 		"noUncheckedIndexedAccess": true,
-		"exactOptionalPropertyTypes": true
+		"exactOptionalPropertyTypes": true,
+		"allowImportingTsExtensions": true,
+		"types": ["bun-types", "node"]
 	},
-	"include": []
+	"include": ["src", "test"]
 }

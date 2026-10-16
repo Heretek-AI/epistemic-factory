@@ -2,5 +2,20 @@
 	"name": "@heretek-ai/es-cli",
 	"private": true,
 	"version": "0.0.0",
-	"type": "module"
+	"description": "Gated Build Factory CLI (`es`): human key sealing, project scaffolding, status, signed stage approvals, research audit, mutation gate, and `.worktreeinclude` secret sync.",
+	"type": "module",
+	"bin": {
+		"es": "./src/bin.ts"
+	},
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@heretek-ai/epistemic-verifier-mcp": "workspace:*",
+		"@heretek-ai/es-core": "workspace:*"
+	},
+	"scripts": {
+		"test": "bun test",
+		"check": "tsc --noEmit"
+	}
 }

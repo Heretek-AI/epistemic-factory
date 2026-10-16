@@ -14,6 +14,13 @@
     "packages/cli": {
       "name": "@heretek-ai/es-cli",
       "version": "0.0.0",
+      "bin": {
+        "es": "./src/bin.ts",
+      },
+      "dependencies": {
+        "@heretek-ai/epistemic-verifier-mcp": "workspace:*",
+        "@heretek-ai/es-core": "workspace:*",
+      },
     },
     "packages/core": {
       "name": "@heretek-ai/es-core",
@@ -22,6 +29,9 @@
     "packages/epistemic-verifier-mcp": {
       "name": "@heretek-ai/epistemic-verifier-mcp",
       "version": "0.0.0",
+      "bin": {
+        "epistemic-verifier-mcp": "./src/mcp-server.ts",
+      },
     },
   },
   "packages": {
