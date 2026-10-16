@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 // `es` — the Gated Build Factory CLI.
 //
 // Single-worktree operator console for the factory line
@@ -22,8 +22,10 @@
 // the `ES_PASSPHRASE` environment variable and lives only in memory.
 // Agents may REQUEST approvals via `es approve`; actually signing requires
 // the human passphrase, which agents must never hold.
+import { realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { auditResearchMarkdown } from "@heretek-ai/epistemic-verifier-mcp";
 import type { Frontier, StageName } from "@heretek-ai/es-core";
 import {
@@ -527,6 +529,26 @@ export async function main(argv: readonly string[]): Promise<number> {
 	}
 }
 
-if (import.meta.main) {
+/**
+ * True when this file is the directly-invoked entrypoint. Bun (and other
+ * `import.meta.main` runtimes) answer directly; on plain Node.js the boolean
+ * is absent, so fall back to comparing the resolved `node <script>` argv
+ * entry against this module's URL (symlink-aware via `realpathSync`, so
+ * globally-linked `es` bins still detect). Fail-closed: any uncertainty
+ * returns false and the CLI never runs on a bare library import.
+ */
+function isMain(): boolean {
+	const bunMain = (import.meta as ImportMeta & { main?: unknown }).main;
+	if (typeof bunMain === "boolean") return bunMain;
+	try {
+		const entry = process.argv[1];
+		if (typeof entry !== "string" || entry.length === 0) return false;
+		return realpathSync(entry) === fileURLToPath(import.meta.url);
+	} catch {
+		return false;
+	}
+}
+
+if (isMain()) {
 	process.exit(await main(process.argv.slice(2)));
 }

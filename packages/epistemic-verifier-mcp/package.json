@@ -1,17 +1,39 @@
 {
 	"name": "@heretek-ai/epistemic-verifier-mcp",
-	"private": true,
-	"version": "0.0.0",
+	"version": "3.0.0",
 	"description": "Standalone Epistemic Quote & Cache Verifier MCP server (NFKC verbatim quotes, HMAC-sealed content-addressed cache, research auditor).",
+	"license": "Apache-2.0",
 	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Heretek-AI/epistemic-factory.git",
+		"directory": "packages/epistemic-verifier-mcp"
+	},
+	"homepage": "https://github.com/Heretek-AI/epistemic-factory#readme",
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE*"
+	],
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./src/index.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
 	},
 	"bin": {
-		"epistemic-verifier-mcp": "./src/mcp-server.ts"
+		"epistemic-verifier-mcp": "./dist/mcp-server.js"
 	},
 	"scripts": {
 		"test": "bun test",
-		"check": "tsc --noEmit"
+		"check": "tsc --noEmit",
+		"build": "tsc -b tsconfig.build.json && node ../../scripts/fix-dist-bins.mjs dist/mcp-server.js",
+		"prepublishOnly": "npm run build"
 	}
 }

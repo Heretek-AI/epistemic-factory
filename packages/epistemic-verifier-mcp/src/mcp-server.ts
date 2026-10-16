@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // MCP stdio JSON-RPC 2.0 server (no external SDK — node builtins only).
 //
 // Transport: newline-delimited JSON-RPC over stdio (one message per line on
@@ -9,13 +10,15 @@
 // Directories resolve per call: explicit `cacheDir`/`stateDir` arguments win,
 // then `EPISTEMIC_CACHE_DIR` / `EPISTEMIC_STATE_DIR`, then `./.epistemic-cache`
 // and `./.epistemic-state` under the server's working directory.
+import { realpathSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { auditResearchMarkdown } from "./auditor.ts";
 import { putCachedSource } from "./cache.ts";
 import { locateQuote, verifyQuote } from "./quote.ts";
 
 export const SERVER_NAME = "epistemic-verifier";
-export const SERVER_VERSION = "0.0.0";
+export const SERVER_VERSION = "3.0.0";
 export const PROTOCOL_VERSION = "2024-11-05";
 
 export interface ToolDef {
@@ -351,7 +354,22 @@ export async function runMcpServer(
 	await Promise.all(pending);
 }
 
-// Executable entrypoint (`bun src/mcp-server.ts`): stdio JSON-RPC server.
-if (import.meta.main) {
+// Executable entrypoint (`bun src/mcp-server.ts` or `node dist/mcp-server.js`):
+// stdio JSON-RPC server. `import.meta.main` covers bun; on plain Node.js the
+// flag is absent, so compare the resolved `node <script>` argv entry against
+// this module's URL (fail-closed: never serve on a bare library import).
+function isMain(): boolean {
+	const bunMain = (import.meta as ImportMeta & { main?: unknown }).main;
+	if (typeof bunMain === "boolean") return bunMain;
+	try {
+		const entry = process.argv[1];
+		if (typeof entry !== "string" || entry.length === 0) return false;
+		return realpathSync(entry) === fileURLToPath(import.meta.url);
+	} catch {
+		return false;
+	}
+}
+
+if (isMain()) {
 	await runMcpServer();
 }

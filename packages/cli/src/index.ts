@@ -1,6 +1,6 @@
 // `@heretek-ai/es-cli` public surface: `es` command functions plus the
 // `.worktreeinclude` secret syncer. Importing this module never runs the CLI
-// (execution happens only through `bin.ts`'s `import.meta.main` guard).
+// (execution happens only through `bin.ts`'s `isMain()` entrypoint guard).
 
 export type { ParsedArgs } from "./bin.ts";
 export {
