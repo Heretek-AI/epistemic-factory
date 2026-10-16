@@ -1,5 +1,9 @@
 # `@heretek-ai/es-cli`
 
+> **3.0.0 is a ground-up rewrite** with a breaking API. Versions up to 2.5.0
+> of this package came from an older, unrelated codebase and are not
+> compatible; pin `^2` if you depend on them.
+
 The Gated Build Factory CLI (`es`): human key sealing, project scaffolding,
 status, signed stage approvals, research audit, mutation gate, and the
 `.worktreeinclude` secret syncer.

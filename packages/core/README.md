@@ -1,5 +1,9 @@
 # `@heretek-ai/es-core`
 
+> **3.0.0 is a ground-up rewrite** with a breaking API. Versions up to 2.5.0
+> of this package came from an older, unrelated codebase and are not
+> compatible; pin `^2` if you depend on them.
+
 Gated Build Factory state machine (Wave 2): Ed25519 human approvals, the
 append-only design-decision frontier, the deterministic `GRILL -> RESEARCH ->
 SPEC -> BUILD_TDD_RED -> BUILD_TDD_GREEN -> GATE_MUTATION -> QA_DUAL_EVAL ->
