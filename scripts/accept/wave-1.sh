@@ -9,6 +9,10 @@ cd "$ROOT"
 
 fail() { echo "wave-1 accept FAILED: $1" >&2; exit 1; }
 
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+export TMP
+
 echo "--- wave-1: unit tests ---"
 bun test packages/epistemic-verifier-mcp || fail "bun test"
 
@@ -57,10 +61,10 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"verify_quote","arguments":{"source":"The quick brown fox jumps over","quote":"quick brown fox jumps"}}}' \
-  | bun ./packages/epistemic-verifier-mcp/src/mcp-server.ts > /tmp/opencode/wave1-mcp-out.jsonl || fail "mcp server run"
+  | bun ./packages/epistemic-verifier-mcp/src/mcp-server.ts > "$TMP/wave1-mcp-out.jsonl" || fail "mcp server run"
 bun -e '
 import { readFileSync } from "node:fs";
-const lines = readFileSync("/tmp/opencode/wave1-mcp-out.jsonl", "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const lines = readFileSync(`${process.env.TMP}/wave1-mcp-out.jsonl`, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 const assert = (cond, msg) => { if (!cond) { console.error(`MCP FAIL: ${msg}`); process.exit(1); } };
 assert(lines.length === 3, `expected 3 responses, got ${lines.length}`);
 assert(lines[0].result.serverInfo.name === "epistemic-verifier", "initialize serverInfo");
