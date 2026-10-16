@@ -1,0 +1,114 @@
+# npm trusted publishing via GitHub OIDC (no long-lived tokens).
+#
+# ONE-TIME manual prerequisites (must be done by a human on npmjs.com / repo settings):
+#   (a) Each package must be PUBLIC (@heretek-ai/epistemic-verifier-mcp,
+#       @heretek-ai/es-core, @heretek-ai/es-cli). Scoped packages default to
+#       restricted; first publish must use `--access public` (already set in
+#       each package.json `publishConfig.access`, and repeated on the CLI line).
+#   (b) Register the trusted publisher on npmjs.com PER PACKAGE:
+#       Package page -> Settings -> Trusted Publisher -> Manage Trusted
+#       Publishers -> GitHub Actions -> organization `Heretek-AI`, repository
+#       `epistemic-factory`, workflow filename `publish.yml`.
+#   (c) The FIRST publish of each package was done manually with 2FA
+#       (`npm publish --provenance --access public` from a maintainer laptop).
+#       OIDC handles all SUBSEQUENT releases; no token rotation is needed.
+#   (d) Provenance requires the `repository` field — already present in all
+#       three package.json files (git+https://github.com/Heretek-AI/epistemic-factory.git).
+#
+# Reference:
+# https://github.blog/changelog/2025-07-31-npm-trusted-publishing-with-oidc-is-generally-available/
+#
+# Trigger: cutting a GitHub Release (type `published`) publishes for real.
+# `workflow_dispatch` defaults to a dry run so the OIDC exchange can be
+# exercised safely; set `dry_run` to false to publish for real manually.
+# NOTE: even `npm publish --dry-run` performs the OIDC token exchange against
+# the registry (it authenticates, then stops short of writing the tarball),
+# so a green dry run proves the trusted-publisher wiring works end to end.
+
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run npm publish in dry-run mode (still exercises the OIDC exchange, publishes nothing)."
+        type: boolean
+        default: true
+        required: false
+
+# Least privilege: read the tree + mint an OIDC identity token for npm.
+# NO write permissions beyond these two. No secrets are used.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tree
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        # Pinned Bun version. Choice record: repo has no `.bun-version` file;
+        # root devDependencies pin `bun-types@^1.4.3`, so Bun 1.4.x matches
+        # the local toolchain. Using 1.4.2 per release-process default.
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Ensure npm supports OIDC trusted publishing (>= 11.5.1)
+        # OIDC trusted publishing is used: the `id-token: write` permission
+        # above lets npm mint a short-lived identity token. NO `NODE_AUTH_TOKEN`
+        # secret is required, and none must be added — a token would defeat
+        # the purpose of trusted publishing.
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build all packages
+        run: bun run build
+
+      - name: Gate — tests, types, and lint must pass before publish
+        run: bun run check
+
+      - name: Publish @heretek-ai/epistemic-verifier-mcp (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+        working-directory: packages/epistemic-verifier-mcp
+        run: npm publish --provenance --access public --dry-run
+
+      - name: Publish @heretek-ai/epistemic-verifier-mcp
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        working-directory: packages/epistemic-verifier-mcp
+        run: npm publish --provenance --access public
+
+      - name: Publish @heretek-ai/es-core (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+        working-directory: packages/core
+        run: npm publish --provenance --access public --dry-run
+
+      - name: Publish @heretek-ai/es-core
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        working-directory: packages/core
+        run: npm publish --provenance --access public
+
+      - name: Publish @heretek-ai/es-cli (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+        working-directory: packages/cli
+        run: npm publish --provenance --access public --dry-run
+
+      - name: Publish @heretek-ai/es-cli
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        working-directory: packages/cli
+        run: npm publish --provenance --access public
