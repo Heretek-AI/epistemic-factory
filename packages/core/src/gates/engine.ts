@@ -6,9 +6,10 @@
 //   (fail closed on untrusted commands).
 // - `runGateCommand`: executes the command, optionally under `bwrap`
 //   (`--ro-bind / /`, fresh `/tmp`, `/proc` + `/dev`, `--die-with-parent`).
-//   When `useBwrap` is set but the `bwrap` binary is missing, execution falls
-//   back to direct spawn with a warning prepended to `stderr` — never fail
-//   closed on a missing sandbox, but always record it.
+//   When `useBwrap` is set but the `bwrap` binary is missing, the runner
+//   fails closed with `SandboxUnavailableError` before anything spawns. Only
+//   an explicit `allowUnsandboxed: true` opts into direct execution, and that
+//   downgrade is still recorded as a warning prepended to `stderr`.
 // - `scanForSecrets`: reports findings (rule id, offset, redacted match) for
 //   AWS key ids, GitHub PATs, PEM private-key headers, live secret keys, and
 //   generic `api-key = "…"` assignments. The scanner only reports; the caller
@@ -91,10 +92,26 @@ export function scanForSecrets(text: string): string[] {
 	return findings;
 }
 
+/** Thrown when a bwrap sandbox is requested but cannot be provided. */
+export class SandboxUnavailableError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "SandboxUnavailableError";
+	}
+}
+
 export interface GateCommandOptions {
 	readonly cmd: string[];
 	readonly cwd: string;
 	readonly useBwrap?: boolean;
+	/**
+	 * Explicit opt-in to run WITHOUT the sandbox when `useBwrap` is set but
+	 * `bwrap` is unavailable. Default `false`: a missing sandbox throws
+	 * `SandboxUnavailableError` (fail closed).
+	 */
+	readonly allowUnsandboxed?: boolean;
+	/** Sandbox binary to probe and run (default `"bwrap"`). */
+	readonly bwrapBinary?: string;
 	readonly trustedHashes?: Set<string>;
 }
 
@@ -104,10 +121,10 @@ export interface GateCommandResult {
 	readonly stderr: string;
 }
 
-/** True when the `bwrap` binary runs (used to decide sandbox vs. fallback). */
-function bwrapAvailable(): boolean {
+/** True when the sandbox binary runs (used to decide sandbox vs. refusal). */
+export function bwrapAvailable(binary = "bwrap"): boolean {
 	try {
-		return spawnSync("bwrap", ["--version"], { stdio: "ignore" }).status === 0;
+		return spawnSync(binary, ["--version"], { stdio: "ignore" }).status === 0;
 	} catch {
 		return false;
 	}
@@ -118,14 +135,22 @@ function bwrapAvailable(): boolean {
  * supplied the command is trust-checked first (fail closed). With
  * `useBwrap`, the command runs under a minimal bubblewrap profile
  * (`--ro-bind / / --tmpfs /tmp --proc /proc --dev /dev --die-with-parent`);
- * when `bwrap` is missing, runs directly with a warning in `stderr`.
+ * when `bwrap` is missing it throws `SandboxUnavailableError` (fail closed)
+ * unless `allowUnsandboxed: true` is passed, in which case it runs directly
+ * with a warning in `stderr`.
  * Non-zero exits are data (returned), never thrown — the caller gates on
  * `exitCode`.
  */
 export async function runGateCommand(
 	opts: GateCommandOptions,
 ): Promise<GateCommandResult> {
-	const { cmd, cwd, useBwrap = false } = opts;
+	const {
+		cmd,
+		cwd,
+		useBwrap = false,
+		allowUnsandboxed = false,
+		bwrapBinary = "bwrap",
+	} = opts;
 	if (cmd.length === 0) {
 		throw new Error("runGateCommand: refusing empty command (fail closed)");
 	}
@@ -139,9 +164,9 @@ export async function runGateCommand(
 	let finalCmd = cmd;
 	let warnings = "";
 	if (useBwrap) {
-		if (bwrapAvailable()) {
+		if (bwrapAvailable(bwrapBinary)) {
 			finalCmd = [
-				"bwrap",
+				bwrapBinary,
 				"--ro-bind",
 				"/",
 				"/",
@@ -157,9 +182,12 @@ export async function runGateCommand(
 				"--",
 				...cmd,
 			];
+		} else if (allowUnsandboxed) {
+			warnings = `warning: bwrap sandbox requested but ${bwrapBinary} was not found; executing directly without a sandbox (allowUnsandboxed: true)\n`;
 		} else {
-			warnings =
-				"warning: bwrap sandbox requested but the bwrap binary was not found; executing directly without a sandbox (recorded here, not fatal)\n";
+			throw new SandboxUnavailableError(
+				`runGateCommand: bwrap sandbox requested but ${bwrapBinary} is not available; refusing to run the gate command unsandboxed (fail closed — pass allowUnsandboxed: true for an explicit, recorded downgrade)`,
+			);
 		}
 	}
 	const [bin, ...args] = finalCmd as [string, ...string[]];

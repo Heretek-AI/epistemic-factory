@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
 	assertTrustedCommand,
+	bwrapAvailable,
 	commandSetHash,
 	runGateCommand,
+	SandboxUnavailableError,
 	scanForSecrets,
 	sha256Hex,
 } from "../src/gates/engine.ts";
@@ -206,17 +207,51 @@ describe("engine trust + secrets", () => {
 		).rejects.toThrow(/untrusted/);
 	});
 
-	it("records a warning when bwrap is requested but missing", async () => {
-		const probed = spawnSync("bwrap", ["--version"], { stdio: "ignore" });
-		if (probed.status === 0) return; // sandbox present: nothing to assert here
+	it("fails closed when bwrap is requested but missing", async () => {
+		const dir = await freshDir("es-bwrap-");
+		const missing = "es-definitely-missing-bwrap-binary";
+		await expect(
+			runGateCommand({
+				cmd: ["echo", "hi"],
+				cwd: dir,
+				useBwrap: true,
+				bwrapBinary: missing,
+			}),
+		).rejects.toBeInstanceOf(SandboxUnavailableError);
+		await expect(
+			runGateCommand({
+				cmd: ["echo", "hi"],
+				cwd: dir,
+				useBwrap: true,
+				bwrapBinary: missing,
+			}),
+		).rejects.toThrow(/refusing to run the gate command unsandboxed/);
+	});
+
+	it("runs unsandboxed only with an explicit allowUnsandboxed opt-in", async () => {
 		const dir = await freshDir("es-bwrap-");
 		const result = await runGateCommand({
 			cmd: ["echo", "hi"],
 			cwd: dir,
 			useBwrap: true,
+			allowUnsandboxed: true,
+			bwrapBinary: "es-definitely-missing-bwrap-binary",
 		});
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr).toContain("bwrap");
+		expect(result.stdout).toBe("hi\n");
+		expect(result.stderr).toContain("without a sandbox");
+	});
+
+	it("runs under bwrap when it is available", async () => {
+		if (!bwrapAvailable()) return; // host has no sandbox binary
+		const dir = await freshDir("es-bwrap-");
+		const result = await runGateCommand({
+			cmd: ["echo", "sandboxed"],
+			cwd: dir,
+			useBwrap: true,
+		});
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toBe("sandboxed\n");
 	});
 });
 

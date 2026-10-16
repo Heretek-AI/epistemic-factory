@@ -37,3 +37,7 @@ hashing and secret scanning.
 3. Gate commands passed to `runGateCommand` should be trust-checked via
    `assertTrustedCommand` (or `trustedHashes`), and their output screened
    with `scanForSecrets` — the scanner reports, the caller decides.
+4. `runGateCommand({ useBwrap: true })` fails closed with
+   `SandboxUnavailableError` when `bwrap` is missing; only an explicit
+   `allowUnsandboxed: true` downgrades to direct execution (recorded as a
+   warning in `stderr`).
