@@ -8,6 +8,12 @@ GRILL -> RESEARCH -> SPEC -> BUILD_TDD_RED -> BUILD_TDD_GREEN
   -> GATE_MUTATION -> QA_DUAL_EVAL -> DONE   (plus HALTED from any state)
 ```
 
+> **3.0.0 is a ground-up rewrite.** `@heretek-ai/es-core` and
+> `@heretek-ai/es-cli` 2.x on npm come from an older, unrelated codebase;
+> 3.0.0 replaces them with a breaking, incompatible API. There is no
+> migration path from 2.x — pin `^2` if you depend on the old packages. See
+> [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Install
 
 Requires [Bun](https://bun.sh) (>= 1.1).
@@ -17,7 +23,7 @@ git clone https://github.com/Heretek-AI/epistemic-factory
 cd epistemic-factory
 bun install
 bun test          # all workspace tests
-bun run check     # tests + tsc --noEmit + biome check
+bun run check     # tests + per-package tsc --noEmit + biome check
 bash scripts/accept/wave-1.sh && bash scripts/accept/wave-2.sh && bash scripts/accept/wave-3.sh
 ```
 
@@ -43,14 +49,26 @@ es key seal [--key-dir <dir>] [--passphrase <pw>]
 # Refuses to overwrite without --force.
 es init [--dir <dir>] [--force]
 
-# Informational summary: frontier presence + rounds count, approvals
-# present, STOP presence. Always exit 0 for a readable dir.
+# Informational summary: run id + state + last step, frontier presence +
+# rounds count, approvals present, STOP presence. Always exit 0 for a
+# readable dir.
 es status [--dir <dir>]
 
 # Sign a stage approval with the sealed human key; the record is stored at
 # <dir>/.factory/approvals/<STAGE>-<runId>.json and printed as JSON.
-es approve --stage <GRILL|SPEC|WAIVER|TRUST> --subject <sha256> --run-id <id> \
+# Without --subject, GRILL/SPEC/TRUST sign the hash of the frontier / spec /
+# .factory/config.json currently on disk; without --run-id, the current run
+# in .factory/run.json is used.
+es approve --stage <GRILL|SPEC|WAIVER|TRUST> [--subject <sha256>] [--run-id <id>] \
   [--key-dir <dir>] [--passphrase <pw>] [--dir <dir>] [--timestamp <iso>]
+
+# Advance the persisted run one step (default: next state on the line).
+# All gate evidence is computed from disk; evidence flags are refused.
+es advance [--to <STATE>] [--dir <dir>]
+
+# Advance as far as the gates allow; exit 0 at DONE, exit 1 with the reason
+# at the first refusal.
+es run [--dir <dir>]
 
 # Audit research markdown against the sealed source cache.
 # Exit 0 when grounded, 1 when any claim is pruned.
@@ -65,28 +83,67 @@ es --help   # usage
 
 ### Example: end-to-end project pass
 
+The runner (`es advance` / `es run`) persists the run in `.factory/run.json`
+and computes every gate's evidence itself: it hashes `frontier.json` and the
+spec, verifies the signed approvals in `.factory/approvals/` against
+`.factory/keys/human.pub`, runs the configured test command through the gate
+engine for RED and GREEN, locks and re-verifies the test manifest, runs the
+mutation gate, reads the QA verdicts, and checks `.factory/STOP` and the
+spend ledger. Nothing it gates on can be passed in on the command line.
+
+It is configured by `.factory/config.json` (paths relative to the project):
+
+```json
+{
+  "version": 1,
+  "frontierFile": "frontier.json",
+  "specFile": "spec.md",
+  "research": { "markdown": "research.md", "cacheDir": ".factory/cache", "stateDir": ".factory/state" },
+  "testCmd": ["bun", "test"],
+  "testDir": "test",
+  "mutation": { "targets": ["src/index.ts"] },
+  "trustedCommands": [["bun", "test"]],
+  "useBwrap": true,
+  "ceilingUSD": 25,
+  "programmerModel": "<programmer model id>"
+}
+```
+
+Because the config decides what the gates execute, the human must sign a
+`TRUST` approval over `sha256(.factory/config.json)` for the run; editing
+the config afterwards voids it. Other inputs: `.factory/qa/functional.json`
+and `.factory/qa/adversarial.json` (`{ "verdict": "PASS", "model": "…" }`),
+and `.factory/spend.jsonl` (one `{ "usd": <n> }` per line).
+
 ```bash
-export ES_PASSPHRASE='correct horse battery staple'
+export ES_PASSPHRASE='correct horse battery staple'   # human only
 es init --dir ./my-build
 es key seal --key-dir ./my-build/.factory/keys
-# ... grill the idea, fill frontier.json ...
-es approve --stage GRILL \
-  --subject "$(sha256sum ./my-build/frontier.json | cut -d' ' -f1)" \
-  --run-id run-1 --key-dir ./my-build/.factory/keys --dir ./my-build
-# ... research with [VERIFIED: sha256:<hash> "verbatim quote"] claims ...
-es audit-research --markdown ./my-build/research.md \
-  --cache-dir ./my-build/.cache --state-dir ./my-build/.state
+# ... write .factory/config.json, grill the idea into frontier.json ...
+es approve --stage TRUST --dir ./my-build --key-dir ./my-build/.factory/keys
+es advance --dir ./my-build                 # IDLE -> GRILL
+es approve --stage GRILL --dir ./my-build --key-dir ./my-build/.factory/keys
+# ... research with [VERIFIED: sha256:<hash> "verbatim quote"] claims, spec ...
+es approve --stage SPEC --dir ./my-build --key-dir ./my-build/.factory/keys
+es run --dir ./my-build                     # stops at the first refusal
 es status --dir ./my-build
-# ... red (must fail), green (must pass, tests locked), mutation gate ...
-es gate-mutation --dir ./my-build --files src/index.ts -- bun test
 ```
+
+The GRILL subject is `frontierHash(frontier)` (sha256 over canonical JSON),
+the SPEC subject is sha256 of the spec bytes; `es approve` computes both when
+`--subject` is omitted, and a refusal message names the expected hash.
+
+Trust boundary: `run.json` and the approval records live in the worktree.
+The runner validates `run.json` against its own history and pins the human
+key fingerprint per run, but anything with write access to `.factory/` can
+still rewrite it — run untrusted agents with `.factory/` read-only to them.
 
 ## Gate pipeline: GRILL → PR
 
 1. **GRILL** — the idea is interrogated; decisions accumulate in
    `frontier.json` (append-only; context-only ideas without a concrete
    behavioral delta from HEAD are refused). Advancing requires a human
-   Ed25519 approval over `sha256(frontier.json)` (`es approve --stage GRILL`).
+   Ed25519 approval over `frontierHash(frontier.json)` (`es approve --stage GRILL`).
 2. **RESEARCH** — sources are cached content-addressed + HMAC-sealed; every
    `[VERIFIED: sha256:<hash> "quote"]` claim must quote its source verbatim
    (NFKC + typography folding, ≥12 chars per ellipsis fragment).

@@ -2,7 +2,7 @@
 # Acceptance for Wave 3: @heretek-ai/es-cli (`es` CLI + `.worktreeinclude`).
 # Exits 0 only if unit tests, typecheck, and a live CLI smoke test
 # (help, init, status, key seal + approve, audit-research pass/fail,
-# gate-mutation pass/fail) all pass; 1 otherwise.
+# gate-mutation pass/fail, runner advance/run refusals) all pass; 1 otherwise.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -59,5 +59,15 @@ mkdir -p "$TMP/gate"
 printf 'export function eq(a: number, b: number): boolean {\n  return a === b;\n}\n' > "$TMP/gate/target.ts"
 $ES gate-mutation --dir "$TMP/gate" --files target.ts -- false || fail "killed mutants must exit 0"
 if $ES gate-mutation --dir "$TMP/gate" --files target.ts -- true > /dev/null 2>&1; then fail "surviving mutants must exit 1"; fi
+
+echo "--- wave-3: runner smoke (es advance / es run fail closed) ---"
+if $ES advance --dir "$TMP/proj" --redExitCode 1 > /dev/null 2>&1; then fail "advance must refuse evidence flags"; fi
+if $ES advance --dir "$TMP/proj" > "$TMP/advance.out" 2>&1; then fail "advance without .factory/config.json must exit 1"; fi
+grep -q "config.json" "$TMP/advance.out" || fail "advance refusal names the missing config"
+if $ES run --dir "$TMP/proj" > /dev/null 2>&1; then fail "run must stop at the first refusal with exit 1"; fi
+$ES status --dir "$TMP/proj" | grep -q "state=IDLE" || fail "status shows the persisted run state"
+touch "$TMP/proj/.factory/STOP"
+if $ES advance --dir "$TMP/proj" > /dev/null 2>&1; then fail "STOP file must force HALTED (exit 1)"; fi
+$ES status --dir "$TMP/proj" | grep -q "state=HALTED" || fail "STOP halts the persisted run"
 
 echo "wave-3 accept PASSED"

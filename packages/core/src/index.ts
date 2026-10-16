@@ -3,6 +3,7 @@
 export * from "./approval/ed25519.ts";
 export * from "./factory/frontier.ts";
 export * from "./factory/machine.ts";
+export * from "./factory/runner.ts";
 export * from "./gates/engine.ts";
 export * from "./gates/mutation.ts";
 export type {

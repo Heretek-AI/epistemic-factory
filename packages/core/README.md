@@ -18,6 +18,10 @@ hashing and secret scanning.
 - `src/factory/machine.ts` — `canTransition` (pure), `transition`
   (throwing), `RedFirstViolationError`, `assertModelDiversity`
   (`TestTamperingError` re-exported from `gates/test-lock.ts`).
+- `src/factory/runner.ts` — `advance`, `runToCompletion`,
+  `expectedApprovalSubject`, `loadFactoryConfig`, `readRunState`: the
+  production driver of the machine. Persists `.factory/run.json` and
+  computes all transition evidence from disk (see the root README).
 - `src/gates/test-lock.ts` — `lockTestManifest`,
   `verifyTestManifestUnchanged`, `assertTestManifestUnchanged`.
 - `src/gates/mutation.ts` — `generateSourceMutants`,
@@ -27,6 +31,11 @@ hashing and secret scanning.
 - `src/index.ts` — public re-exports.
 
 ## Runner contract (how the CLI drives the machine)
+
+`src/factory/runner.ts` implements this contract; the CLI's `es advance` /
+`es run` call it and never pass evidence through. The machine also
+recomputes `frontierHash(frontier)` and `sha256(specContent)` and refuses
+when the supplied hashes do not match.
 
 1. After the RED run fails, call `lockTestManifest(testDir)` and carry the
    manifest in `ctx.testManifest`.

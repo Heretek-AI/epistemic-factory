@@ -16,6 +16,8 @@ status, signed stage approvals, research audit, mutation gate, and the
 - `src/index.ts` — re-exports the command functions and the syncer (importing
   it never runs the CLI).
 - `test/cli.test.ts` — `bun:test` suite (real temp dirs, real core/verifier).
+- `test/runner.test.ts` — `es advance` / `es run` end to end against a real
+  temp project (real key, approvals, sealed cache, and test command).
 
 ## Commands
 
